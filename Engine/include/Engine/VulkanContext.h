@@ -39,12 +39,22 @@ namespace Engine
         };
         SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) const;
 
+        void createLogicalDevice();
+
     private:
         Window &m_Window;
         VkInstance m_Instance = VK_NULL_HANDLE;
         VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
-        VkPhysicalDevice m_PhysicalDevice = VK_NULL_HANDLE;
-        QueueFamilyIndices m_QueueFamilyIndices;
+
+        struct SelectedDeviceInfo
+        {
+            VkPhysicalDevice physicalDevice;
+            QueueFamilyIndices queueFamilyIndices;
+        } m_SelectedDeviceInfo;
+
+        VkDevice m_Device = VK_NULL_HANDLE;       // logical device
+        VkQueue m_GraphicsQueue = VK_NULL_HANDLE; // graphics queue handle
+        VkQueue m_PresentQueue = VK_NULL_HANDLE;
     };
 
 } // namespace Engine
