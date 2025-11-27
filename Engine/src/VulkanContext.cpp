@@ -1,5 +1,6 @@
 #include "Engine/VulkanContext.h"
 #include "Engine/Window.h"
+#include "Engine/SwapChain.h"
 #include <GLFW/glfw3.h> // for glfwCreateWindowSurface
 #include <iostream>
 #include <vector>
@@ -29,11 +30,24 @@ namespace Engine
         createInstance();
         createSurface();
         pickPhysicalDeviceForPresentation();
-        // pick physical device, create logical device, queues...
+        createLogicalDevice();
+
+        m_SwapChain = std::make_unique<SwapChain>(
+            m_Device,
+            m_SelectedDeviceInfo.physicalDevice,
+            m_Surface,
+            m_SelectedDeviceInfo.queueFamilyIndices,
+            VkExtent2D{m_Window.GetWidth(), m_Window.GetHeight()});
+        m_SwapChain->Init();
     }
 
     void VulkanContext::Shutdown()
     {
+        if (m_SwapChain)
+        {
+            m_SwapChain->Cleanup();
+            m_SwapChain.reset();
+        }
         if (m_Device != VK_NULL_HANDLE)
         {
             vkDeviceWaitIdle(m_Device);

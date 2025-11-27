@@ -1,7 +1,7 @@
 #pragma once
-#include "Engine/VulkanContext.h" // for QueueFamilyIndices
 #include <vulkan/vulkan.h>
 #include <vector>
+#include "Engine/QueueFamilyStruct.h"
 
 namespace Engine
 {
@@ -14,7 +14,7 @@ namespace Engine
         SwapChain(VkDevice device,
                   VkPhysicalDevice physicalDevice,
                   VkSurfaceKHR surface,
-                  const QueueFamilyIndices &indices,
+                  const Engine::QueueFamilyIndices &indices,
                   VkExtent2D initialExtent);
         ~SwapChain();
 
@@ -44,7 +44,7 @@ namespace Engine
         VkDevice m_Device;
         VkPhysicalDevice m_PhysicalDevice;
         VkSurfaceKHR m_Surface;
-        QueueFamilyIndices m_QueueIndices;
+        Engine::QueueFamilyIndices m_QueueIndices;
 
         VkSwapchainKHR m_Swapchain = VK_NULL_HANDLE;
         std::vector<VkImage> m_Images;

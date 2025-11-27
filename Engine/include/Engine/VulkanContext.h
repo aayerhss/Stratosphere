@@ -1,22 +1,15 @@
 #pragma once
+#include "Engine/QueueFamilyStruct.h"
 #include <vulkan/vulkan.h>
 #include <optional>
 #include <vector>
+#include <memory>
 
 namespace Engine
 {
     class Window;
+    class SwapChain; // Forward declaration of SwapChain
 
-    struct QueueFamilyIndices
-    {
-        std::optional<uint32_t> graphicsFamily;
-        std::optional<uint32_t> presentFamily;
-
-        bool isComplete() const
-        {
-            return graphicsFamily.has_value() && presentFamily.has_value();
-        }
-    };
     class VulkanContext
     {
     public:
@@ -55,6 +48,8 @@ namespace Engine
         VkDevice m_Device = VK_NULL_HANDLE;       // logical device
         VkQueue m_GraphicsQueue = VK_NULL_HANDLE; // graphics queue handle
         VkQueue m_PresentQueue = VK_NULL_HANDLE;
+
+        std::unique_ptr<SwapChain> m_SwapChain;
     };
 
 } // namespace Engine

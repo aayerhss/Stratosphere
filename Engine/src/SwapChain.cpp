@@ -6,11 +6,10 @@
 
 namespace Engine
 {
-
     SwapChain::SwapChain(VkDevice device,
                          VkPhysicalDevice physicalDevice,
                          VkSurfaceKHR surface,
-                         const QueueFamilyIndices &indices,
+                         const Engine::QueueFamilyIndices &indices,
                          VkExtent2D initialExtent)
         : m_Device(device), m_PhysicalDevice(physicalDevice), m_Surface(surface), m_QueueIndices(indices), m_InitialExtent(initialExtent), m_Extent(initialExtent)
     {

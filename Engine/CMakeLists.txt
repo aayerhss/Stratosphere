@@ -43,6 +43,7 @@ add_library(Engine STATIC
     src/Application.cpp
     src/VulkanContext.cpp
     src/GLFWWindow.cpp
+    src/SwapChain.cpp
     # add other engine sources here...
 )
 
