@@ -53,6 +53,11 @@ namespace Engine
             // Call renderer (user or engine) to submit draws. For now just the hook:
             OnRender();
 
+            if (m_Impl->vkContext)
+            {
+                m_Impl->vkContext->DrawFrame();
+            }
+
             // Optionally throttle to limit CPU spin
         }
     }

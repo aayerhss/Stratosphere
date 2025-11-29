@@ -1,5 +1,6 @@
 #pragma once
 #include "Engine/QueueFamilyStruct.h"
+#include "Engine/RendererMinimal.h"
 #include <vulkan/vulkan.h>
 #include <optional>
 #include <vector>
@@ -9,7 +10,6 @@ namespace Engine
 {
     class Window;
     class SwapChain; // Forward declaration of SwapChain
-
     class VulkanContext
     {
     public:
@@ -18,6 +18,7 @@ namespace Engine
 
         void Init();
         void Shutdown();
+        void DrawFrame();
 
     private:
         void createInstance();
@@ -50,6 +51,7 @@ namespace Engine
         VkQueue m_PresentQueue = VK_NULL_HANDLE;
 
         std::unique_ptr<SwapChain> m_SwapChain;
+        std::unique_ptr<RendererMinimal> m_Renderer;
     };
 
 } // namespace Engine
