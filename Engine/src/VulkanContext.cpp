@@ -1,12 +1,14 @@
 #include "Engine/VulkanContext.h"
 #include "Engine/Window.h"
 #include "Engine/SwapChain.h"
+#include "utils/VulkanValidationUtils.h"
 #include <GLFW/glfw3.h> // for glfwCreateWindowSurface
 #include <iostream>
 #include <vector>
 #include <set>
 #include <stdexcept>
 #include <algorithm>
+#include <cstring>
 
 static const std::vector<const char *> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -72,11 +74,63 @@ namespace Engine
         }
     }
 
+    bool VulkanContext::checkValidationLayerSupport()
+    {
+        const char *layerName = "VK_LAYER_KHRONOS_validation";
+        uint32_t layerCount = 0;
+        if (vkEnumerateInstanceLayerProperties(&layerCount, nullptr) != VK_SUCCESS)
+        {
+            return false;
+        }
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+        if (layerCount > 0)
+        {
+            vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+        }
+        for (const auto &layerProp : availableLayers)
+        {
+            if (std::strcmp(layerProp.layerName, layerName) == 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void VulkanContext::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo)
+    {
+        std::memset(&createInfo, 0, sizeof(createInfo));
+        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        createInfo.messageSeverity =
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        createInfo.messageType =
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        createInfo.pfnUserCallback = debugCallback;
+        createInfo.pUserData = nullptr;
+    }
+
     void VulkanContext::createInstance()
     {
         uint32_t extCount = 0;
         const char **glfwExts = glfwGetRequiredInstanceExtensions(&extCount);
         std::vector<const char *> extensions(glfwExts, glfwExts + extCount);
+
+        // Enable validation layers in debug builds only
+#ifndef NDEBUG
+        const bool enableValidationLayers = true;
+#else
+        const bool enableValidationLayers = false;
+#endif
+
+        // If validation is enabled, request the debug utils extension so we can create a messenger.
+        if (enableValidationLayers)
+        {
+            extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
 
         VkApplicationInfo appInfo{};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -92,10 +146,53 @@ namespace Engine
         ci.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
         ci.ppEnabledExtensionNames = extensions.data();
 
+        // Validation layers
+        std::vector<const char *> layers;
+        if (enableValidationLayers)
+        {
+            const char *validationLayerName = "VK_LAYER_KHRONOS_validation";
+            if (!checkValidationLayerSupport())
+            {
+                throw std::runtime_error("Validation layer requested but not available");
+            }
+            layers.push_back(validationLayerName);
+            ci.enabledLayerCount = static_cast<uint32_t>(layers.size());
+            ci.ppEnabledLayerNames = layers.data();
+        }
+        else
+        {
+            ci.enabledLayerCount = 0;
+            ci.ppEnabledLayerNames = nullptr;
+        }
+
+        // If validation is enabled, chain the debug messenger create info into pNext so we receive
+        // messages produced during vkCreateInstance as well.
+        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
+        if (enableValidationLayers)
+        {
+            populateDebugMessengerCreateInfo(debugCreateInfo);
+            ci.pNext = reinterpret_cast<const void *>(&debugCreateInfo);
+        }
+        else
+        {
+            ci.pNext = nullptr;
+        }
+
         VkResult res = vkCreateInstance(&ci, nullptr, &m_Instance);
         if (res != VK_SUCCESS)
         {
             throw std::runtime_error("Failed to create Vulkan instance");
+        }
+
+        // Create the debug messenger for runtime callbacks (after instance creation)
+        if (enableValidationLayers)
+        {
+            populateDebugMessengerCreateInfo(debugCreateInfo);
+            if (CreateDebugUtilsMessengerEXT(m_Instance, &debugCreateInfo, nullptr, &m_DebugMessenger) != VK_SUCCESS)
+            {
+                std::cerr << "Warning: failed to set up debug messenger!" << std::endl;
+                m_DebugMessenger = VK_NULL_HANDLE;
+            }
         }
     }
 

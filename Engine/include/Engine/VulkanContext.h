@@ -34,10 +34,14 @@ namespace Engine
 
         void createLogicalDevice();
 
+        bool checkValidationLayerSupport();
+        void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo);
+
     private:
         Window &m_Window;
         VkInstance m_Instance = VK_NULL_HANDLE;
         VkSurfaceKHR m_Surface = VK_NULL_HANDLE;
+        VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
 
         struct SelectedDeviceInfo
         {
