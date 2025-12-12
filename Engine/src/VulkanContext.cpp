@@ -69,6 +69,11 @@ namespace Engine
         }
         if (m_Instance != VK_NULL_HANDLE)
         {
+            if (m_DebugMessenger != VK_NULL_HANDLE)
+            {
+                DestroyDebugUtilsMessengerEXT(m_Instance, m_DebugMessenger, nullptr);
+                m_DebugMessenger = VK_NULL_HANDLE;
+            }
             vkDestroyInstance(m_Instance, nullptr);
             m_Instance = VK_NULL_HANDLE;
         }

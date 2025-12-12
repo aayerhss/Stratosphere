@@ -19,6 +19,11 @@ namespace Engine
         void Shutdown();
         void DrawFrame();
 
+        VkDevice GetDevice() const { return m_Device; }
+        VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
+        VkQueue GetPresentQueue() const { return m_PresentQueue; }
+        uint32_t GetGraphicsQueueFamilyIndex() const { return m_SelectedDeviceInfo.queueFamilyIndices.graphicsFamily.value(); }
+
     private:
         void createInstance();
         void createSurface();
