@@ -1,6 +1,8 @@
 #include "Engine/Application.h"
 #include "Engine/Window.h"
 #include "Engine/VulkanContext.h"
+#include "Engine/Renderer.h"
+#include "Engine/SwapChain.h"
 #include <chrono>
 #include <iostream>
 
@@ -11,6 +13,7 @@ namespace Engine
     {
         std::unique_ptr<Window> window;
         std::unique_ptr<VulkanContext> vkContext;
+        std::unique_ptr<Renderer> renderer;
         bool running = true;
         EventCallbackFn eventCallback;
     };
@@ -26,6 +29,7 @@ namespace Engine
 
         // Create Vulkan context (owns instance, surface creation using the window handle)
         m_Impl->vkContext = std::make_unique<VulkanContext>(*m_Impl->window);
+        m_Impl->renderer = std::make_unique<Renderer>(m_Impl->vkContext.get(), m_Impl->vkContext->GetSwapChain(), 4);
     }
 
     Application::~Application() = default;

@@ -44,7 +44,8 @@ add_library(Engine STATIC
     src/VulkanContext.cpp
     src/GLFWWindow.cpp
     src/SwapChain.cpp
-    src/RendererMinimal.cpp
+    src/Renderer.cpp
+    src/TrianglesRenderPassModule.cpp
     # add other engine sources here...
 )
 

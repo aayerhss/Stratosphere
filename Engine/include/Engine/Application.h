@@ -11,7 +11,9 @@ namespace Engine
         float DeltaSeconds = 0.0f;
     };
 
-    class Window; // forward
+    class Window;    // forward
+    class Renderer;  // forward
+    class SwapChain; // forward
 
     class Application
     {

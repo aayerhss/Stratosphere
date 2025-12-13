@@ -19,10 +19,12 @@ namespace Engine
         void Shutdown();
         void DrawFrame();
 
+        VkPhysicalDevice GetPhysicalDevice() const { return m_SelectedDeviceInfo.physicalDevice; }
         VkDevice GetDevice() const { return m_Device; }
         VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
         VkQueue GetPresentQueue() const { return m_PresentQueue; }
         uint32_t GetGraphicsQueueFamilyIndex() const { return m_SelectedDeviceInfo.queueFamilyIndices.graphicsFamily.value(); }
+        SwapChain *GetSwapChain() const { return m_SwapChain.get(); }
 
     private:
         void createInstance();

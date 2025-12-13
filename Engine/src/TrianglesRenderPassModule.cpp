@@ -1,0 +1,161 @@
+#include "Engine/TrianglesRenderPassModule.h"
+#include "Engine/VulkanContext.h"
+#include <stdexcept>
+#include <cstring>
+
+namespace Engine
+{
+
+    TrianglesRenderPassModule::~TrianglesRenderPassModule()
+    {
+        destroyResources();
+    }
+
+    void TrianglesRenderPassModule::setVertexBinding(const VertexBinding &binding)
+    {
+        m_binding = binding;
+    }
+
+    void TrianglesRenderPassModule::onCreate(VulkanContext &ctx, VkRenderPass pass, const std::vector<VkFramebuffer> &fbs)
+    {
+        (void)fbs; // not needed here
+        m_device = ctx.GetDevice();
+        // Assume swapchain extent comes via context; if renderer exposes it, you can pass.
+        // We'll set viewport/scissor dynamically in record.
+        createPipeline(ctx, pass);
+    }
+
+    void TrianglesRenderPassModule::onResize(VulkanContext &ctx, VkExtent2D newExtent)
+    {
+        // With dynamic viewport/scissor, pipeline can remain. If you changed formats/subpasses, recreate.
+        m_extent = newExtent;
+    }
+
+    void TrianglesRenderPassModule::record(FrameContext &frameCtx, VkCommandBuffer cmd)
+    {
+        (void)frameCtx;
+        // Bind pipeline
+        m_pipeline.bind(cmd);
+
+        // Dynamic viewport & scissor covering the current framebuffer extent
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(m_extent.width);
+        viewport.height = static_cast<float>(m_extent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = m_extent;
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        // Bind vertex buffer if provided
+        if (m_binding.vertexBuffer != VK_NULL_HANDLE && m_binding.vertexCount > 0)
+        {
+            VkDeviceSize offsets[1] = {m_binding.offset};
+            VkBuffer buffers[1] = {m_binding.vertexBuffer};
+            vkCmdBindVertexBuffers(cmd, 0, 1, buffers, offsets);
+            vkCmdDraw(cmd, m_binding.vertexCount, 1, 0, 0);
+        }
+    }
+
+    void TrianglesRenderPassModule::destroyResources()
+    {
+        if (m_device != VK_NULL_HANDLE)
+        {
+            m_pipeline.destroy(m_device);
+        }
+    }
+
+    void TrianglesRenderPassModule::createPipeline(VulkanContext &ctx, VkRenderPass pass)
+    {
+        PipelineCreateInfo pci{};
+        pci.device = ctx.GetDevice();
+        pci.renderPass = pass;
+        pci.subpass = 0;
+
+        // Load shader modules
+        VkShaderModule vert = Pipeline::createShaderModuleFromFile(pci.device, "Shaders/triangle.vert.spv");
+        VkShaderModule frag = Pipeline::createShaderModuleFromFile(pci.device, "Shaders/triangle.frag.spv");
+
+        VkPipelineShaderStageCreateInfo vs{};
+        vs.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vs.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        vs.module = vert;
+        vs.pName = "main";
+
+        VkPipelineShaderStageCreateInfo fs{};
+        fs.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fs.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fs.module = frag;
+        fs.pName = "main";
+
+        pci.shaderStages = {vs, fs};
+
+        // Vertex input: binding 0, stride = sizeof(vec2 + vec3) = 5 * float
+        VkVertexInputBindingDescription bindingDesc{};
+        bindingDesc.binding = 0;
+        bindingDesc.stride = static_cast<uint32_t>(sizeof(float) * 5);
+        bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        VkVertexInputAttributeDescription attrs[2]{};
+        // location 0: vec2 position
+        attrs[0].location = 0;
+        attrs[0].binding = 0;
+        attrs[0].format = VK_FORMAT_R32G32_SFLOAT;
+        attrs[0].offset = 0;
+        // location 1: vec3 color
+        attrs[1].location = 1;
+        attrs[1].binding = 0;
+        attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[1].offset = static_cast<uint32_t>(sizeof(float) * 2);
+
+        VkPipelineVertexInputStateCreateInfo vi{};
+        vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vi.vertexBindingDescriptionCount = 1;
+        vi.pVertexBindingDescriptions = &bindingDesc;
+        vi.vertexAttributeDescriptionCount = 2;
+        vi.pVertexAttributeDescriptions = attrs;
+        pci.vertexInput = vi;
+        pci.vertexInputProvided = true;
+
+        // Input assembly: triangle list
+        VkPipelineInputAssemblyStateCreateInfo ia{};
+        ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        ia.primitiveRestartEnable = VK_FALSE;
+        pci.inputAssembly = ia;
+        pci.inputAssemblyProvided = true;
+
+        // Dynamic viewport/scissor
+        pci.dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+
+        // Rasterization: no cull to see both orientations
+        VkPipelineRasterizationStateCreateInfo rs{};
+        rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rs.polygonMode = VK_POLYGON_MODE_FILL;
+        rs.cullMode = VK_CULL_MODE_NONE;
+        rs.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rs.lineWidth = 1.0f;
+        pci.rasterization = rs;
+        pci.rasterizationProvided = true;
+
+        // Multisample default
+        // Color blend default (no blending)
+
+        VkResult r = m_pipeline.create(pci);
+
+        // Destroy temp shader modules regardless of success
+        vkDestroyShaderModule(pci.device, vert, nullptr);
+        vkDestroyShaderModule(pci.device, frag, nullptr);
+
+        if (r != VK_SUCCESS)
+        {
+            throw std::runtime_error("TrianglesRenderPassModule: failed to create pipeline");
+        }
+    }
+
+} // namespace Engine
