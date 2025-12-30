@@ -37,6 +37,8 @@ add_library(Engine STATIC
     src/Pipeline.cpp
     src/BufferUtils.cpp
     src/SMeshLoader.cpp
+    src/AssetManager.cpp
+    src/MeshAssets.cpp
 )
 
 target_include_directories(Engine
