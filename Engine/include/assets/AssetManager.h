@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <memory>
 
-#include "assets/MeshFormats.h"
-#include "assets/MeshAsset.h"
+#include "assets/MeshFormats.h" // MeshData + LoadSMeshV0FromFile
+#include "assets/MeshAsset.h"   // GPU-backed mesh asset
 
 namespace Engine
 {
@@ -20,11 +20,16 @@ namespace Engine
     };
 
     // Central manager for loading, caching, and destroying assets.
-    // Phase 1: Mesh-only
+    // Phase 1: Mesh-only (expand to textures/materials later).
     class AssetManager
     {
     public:
-        AssetManager(VkDevice device, VkPhysicalDevice phys);
+        // Updated: requires graphics queue + its family index.
+        // AssetManager will create a transient command pool per upload.
+        AssetManager(VkDevice device,
+                     VkPhysicalDevice phys,
+                     VkQueue graphicsQueue,
+                     uint32_t graphicsQueueFamilyIndex);
         ~AssetManager();
 
         // Synchronous load: returns a handle and caches by path. Adds one reference to the asset.
@@ -46,6 +51,9 @@ namespace Engine
     private:
         VkDevice m_device = VK_NULL_HANDLE;
         VkPhysicalDevice m_phys = VK_NULL_HANDLE;
+        VkQueue m_graphicsQueue = VK_NULL_HANDLE;
+        uint32_t m_graphicsQueueFamilyIndex = 0;
+
         uint64_t m_nextID = 1;
 
         struct MeshEntry

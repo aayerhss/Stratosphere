@@ -4,8 +4,14 @@
 namespace Engine
 {
 
-    AssetManager::AssetManager(VkDevice device, VkPhysicalDevice phys)
-        : m_device(device), m_phys(phys) {}
+    AssetManager::AssetManager(VkDevice device,
+                               VkPhysicalDevice phys,
+                               VkQueue graphicsQueue,
+                               uint32_t graphicsQueueFamilyIndex)
+        : m_device(device),
+          m_phys(phys),
+          m_graphicsQueue(graphicsQueue),
+          m_graphicsQueueFamilyIndex(graphicsQueueFamilyIndex) {}
 
     AssetManager::~AssetManager()
     {
@@ -23,7 +29,7 @@ namespace Engine
 
     MeshHandle AssetManager::loadMesh(const std::string &cookedMeshPath)
     {
-        // Check path cache disctionary first
+        // Check path cache first
         auto it = m_meshPathCache.find(cookedMeshPath);
         if (it != m_meshPathCache.end())
         {
@@ -49,15 +55,34 @@ namespace Engine
 
     MeshHandle AssetManager::createMeshFromData(const MeshData &data, const std::string &path)
     {
+        // Create a transient command pool for one-shot staging uploads
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+
+        VkCommandPool uploadPool = VK_NULL_HANDLE;
+        VkResult pr = vkCreateCommandPool(m_device, &poolInfo, nullptr, &uploadPool);
+        if (pr != VK_SUCCESS)
+        {
+            return MeshHandle{};
+        }
+
         auto asset = std::make_unique<MeshAsset>();
-        if (!asset->upload(m_device, m_phys, data))
+        const bool ok = asset->upload(
+            m_device, m_phys, uploadPool, m_graphicsQueue, data);
+
+        // We can destroy the transient pool immediately after upload
+        vkDestroyCommandPool(m_device, uploadPool, nullptr);
+
+        if (!ok)
         {
             return MeshHandle{}; // upload failure
         }
 
         const uint64_t id = m_nextID++;
         MeshEntry entry;
-        entry.asset = std::move(asset); // moveing the unique ptr
+        entry.asset = std::move(asset);
         entry.generation = 1;
         entry.refCount = 1; // caller gets an initial reference
         entry.path = path;
@@ -120,4 +145,4 @@ namespace Engine
         }
     }
 
-} // namespace Engine
+}

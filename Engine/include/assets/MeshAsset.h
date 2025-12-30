@@ -4,19 +4,23 @@
 #include "assets/MeshFormats.h"
 #include "utils/BufferUtils.h"
 
-// This class is responsible for uploading mesh data to GPU and managing the associated resources.
 namespace Engine
 {
 
-    // GPU-backed mesh asset: owns vertex/index buffers and basic metadata (AABB, counts)
+    // GPU-backed mesh asset: owns device-local vertex/index buffers and metadata
     class MeshAsset
     {
     public:
         MeshAsset() = default;
         ~MeshAsset() = default;
 
-        // Upload MeshData into GPU buffers (host-visible for now)
-        bool upload(VkDevice device, VkPhysicalDevice phys, const MeshData &data);
+        // Upload MeshData into device-local buffers using staging.
+        // Requires a command pool and queue for the copy operations.
+        bool upload(VkDevice device,
+                    VkPhysicalDevice phys,
+                    VkCommandPool commandPool,
+                    VkQueue queue,
+                    const MeshData &data);
 
         // Destroy GPU resources
         void destroy(VkDevice device);
@@ -30,8 +34,8 @@ namespace Engine
         const float *getAABBMax() const { return m_aabbMax; }
 
     private:
-        VertexBufferHandle m_vb{}; // host-visible buffer for simplicity
-        IndexBufferHandle m_ib{};  // host-visible buffer for simplicity
+        VertexBufferHandle m_vb{};
+        IndexBufferHandle m_ib{};
         uint32_t m_indexCount = 0;
         VkIndexType m_indexType = VK_INDEX_TYPE_UINT32;
         float m_aabbMin[3]{};

@@ -18,7 +18,9 @@ public:
 
         m_assets = std::make_unique<Engine::AssetManager>(
             GetVulkanContext().GetDevice(),
-            GetVulkanContext().GetPhysicalDevice());
+            GetVulkanContext().GetPhysicalDevice(),
+            GetVulkanContext().GetGraphicsQueue(),
+            GetVulkanContext().GetGraphicsQueueFamilyIndex());
 
         // 1) Setup triangle (existing sample)
         setupTriangle();
