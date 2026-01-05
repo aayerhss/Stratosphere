@@ -3,6 +3,7 @@
 #include "Engine/VulkanContext.h"
 #include "Engine/Renderer.h"
 #include "Engine/SwapChain.h"
+#include "ECS/ECSContext.h"
 #include <iostream>
 #include <chrono>
 
@@ -16,6 +17,7 @@ namespace Engine
         std::unique_ptr<Renderer> renderer;
         bool running = true;
         EventCallbackFn eventCallback;
+        std::unique_ptr<ECS::ECSContext> ecs;
     };
 
     Application::Application()
@@ -33,6 +35,8 @@ namespace Engine
 
         // Initialize renderer now that swapchain exists
         m_Impl->renderer->init();
+
+        m_Impl->ecs = std::make_unique<ECS::ECSContext>();
     }
 
     Application::~Application() = default;
@@ -104,6 +108,7 @@ namespace Engine
     Window &Application::GetWindow() { return *m_Impl->window; }
     VulkanContext &Application::GetVulkanContext() { return *m_Impl->vkContext; }
     Renderer &Application::GetRenderer() { return *m_Impl->renderer; }
+    ECS::ECSContext &Application::GetECS() { return *m_Impl->ecs; }
 
     void Application::Close()
     {

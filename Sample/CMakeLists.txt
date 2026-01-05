@@ -4,6 +4,7 @@ project(Sample LANGUAGES CXX)
 add_executable(SampleApp src/main.cpp)
 target_link_libraries(SampleApp PRIVATE Engine)
 target_include_directories(SampleApp PRIVATE ${CMAKE_SOURCE_DIR}/Engine/include)
+target_include_directories(SampleApp PRIVATE ${CMAKE_SOURCE_DIR}/Sample)
 
 # Option: run OBJ -> SMESH conversion for Sample assets during build
 option(STRATO_PROCESS_SAMPLE_OBJ "Convert Sample OBJ assets to cooked SMESH during build" ON)
@@ -38,3 +39,24 @@ foreach(SPIRV ${SHADER_SPV})
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SPIRV} $<TARGET_FILE_DIR:SampleApp>/shaders/
     )
 endforeach()
+
+# Copy all *.json in Sample/entities to runtime output (SampleApp/entities/)
+file(GLOB_RECURSE SAMPLE_ENTITY_JSON_FILES
+    "${CMAKE_SOURCE_DIR}/Sample/entities/*.json"
+)
+
+add_custom_command(TARGET SampleApp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_FILE_DIR:SampleApp>/entities
+    COMMENT "Preparing entities output directory"
+)
+
+foreach(JSON_FILE ${SAMPLE_ENTITY_JSON_FILES})
+    add_custom_command(TARGET SampleApp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${JSON_FILE}"
+            $<TARGET_FILE_DIR:SampleApp>/entities/
+        COMMENT "Copying entity JSON: ${JSON_FILE}"
+    )
+endforeach()
+

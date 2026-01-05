@@ -14,6 +14,11 @@ namespace Engine
         float DeltaSeconds = 0.0f;
     };
 
+    namespace ECS
+    {
+        struct ECSContext;
+    }
+
     class Application
     {
     public:
@@ -37,6 +42,8 @@ namespace Engine
         // New: access to VulkanContext and Renderer for sample setup
         VulkanContext &GetVulkanContext();
         Renderer &GetRenderer();
+        // Access to ECS context (owned by Application)
+        ECS::ECSContext &GetECS();
 
         // Request application quit
         virtual void Close();
