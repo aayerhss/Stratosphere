@@ -1,6 +1,7 @@
 #include "Engine/TrianglesRenderPassModule.h"
 #include "Engine/VulkanContext.h"
 #include "Engine/SwapChain.h"
+#include "utils/BufferUtils.h"
 #include <stdexcept>
 #include <cstring>
 
@@ -24,6 +25,21 @@ namespace Engine
         // Initialize extent from current swapchain so dynamic viewport/scissor have valid size
         if (ctx.GetSwapChain())
             m_extent = ctx.GetSwapChain()->GetExtent();
+
+        // Ensure we always have an instance buffer bound (even for a single draw)
+        // Instance data layout: { vec2 offset; vec3 color; }
+        const float defaultInstance[5] = {0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
+        VkResult instRes = CreateOrUpdateVertexBuffer(
+            ctx.GetDevice(),
+            ctx.GetPhysicalDevice(),
+            defaultInstance,
+            sizeof(defaultInstance),
+            m_defaultInstanceVB);
+        if (instRes != VK_SUCCESS)
+        {
+            throw std::runtime_error("Triangles: failed to create default instance buffer");
+        }
+
         // Assume swapchain extent comes via context; if renderer exposes it, you can pass.
         // We'll set viewport/scissor dynamically in record.
         createPipeline(ctx, pass);
@@ -58,14 +74,18 @@ namespace Engine
         scissor.extent = m_extent;
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        // Bind vertex buffer if provided
-        if (m_binding.vertexBuffer != VK_NULL_HANDLE && m_binding.vertexCount > 0)
-        {
-            VkDeviceSize offsets[1] = {m_binding.offset};
-            VkBuffer buffers[1] = {m_binding.vertexBuffer};
-            vkCmdBindVertexBuffers(cmd, 0, 1, buffers, offsets);
-            vkCmdDraw(cmd, m_binding.vertexCount, 1, 0, 0);
-        }
+        // Bind vertex + instance buffers
+        if (m_binding.vertexBuffer == VK_NULL_HANDLE || m_binding.vertexCount == 0)
+            return;
+
+        VkBuffer buffers[2] = {m_binding.vertexBuffer,
+                               (m_instances.instanceBuffer != VK_NULL_HANDLE ? m_instances.instanceBuffer : m_defaultInstanceVB.buffer)};
+        VkDeviceSize offsets[2] = {m_binding.offset,
+                                   (m_instances.instanceBuffer != VK_NULL_HANDLE ? m_instances.offset : 0)};
+        vkCmdBindVertexBuffers(cmd, 0, 2, buffers, offsets);
+
+        const uint32_t instanceCount = (m_instances.instanceCount > 0 ? m_instances.instanceCount : 1);
+        vkCmdDraw(cmd, m_binding.vertexCount, instanceCount, 0, 0);
     }
 
     void TrianglesRenderPassModule::onDestroy(VulkanContext &ctx)
@@ -83,6 +103,8 @@ namespace Engine
                 vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
                 m_pipelineLayout = VK_NULL_HANDLE;
             }
+
+            DestroyVertexBuffer(m_device, m_defaultInstanceVB);
         }
     }
 
@@ -131,13 +153,18 @@ namespace Engine
         // Ensure the PipelineCreateInfo uses the layout we just created
         pci.pipelineLayout = m_pipelineLayout;
 
-        // Vertex input: binding 0, stride = sizeof(vec2 + vec3) = 5 * float
-        VkVertexInputBindingDescription bindingDesc{};
-        bindingDesc.binding = 0;
-        bindingDesc.stride = static_cast<uint32_t>(sizeof(float) * 5);
-        bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        // Vertex input:
+        //  binding 0: per-vertex (vec2 pos + vec3 color) => 5 floats
+        //  binding 1: per-instance (vec2 offset + vec3 color) => 5 floats
+        VkVertexInputBindingDescription bindingDescs[2]{};
+        bindingDescs[0].binding = 0;
+        bindingDescs[0].stride = static_cast<uint32_t>(sizeof(float) * 5);
+        bindingDescs[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        bindingDescs[1].binding = 1;
+        bindingDescs[1].stride = static_cast<uint32_t>(sizeof(float) * 5);
+        bindingDescs[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-        VkVertexInputAttributeDescription attrs[2]{};
+        VkVertexInputAttributeDescription attrs[4]{};
         // location 0: vec2 position
         attrs[0].location = 0;
         attrs[0].binding = 0;
@@ -149,11 +176,23 @@ namespace Engine
         attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
         attrs[1].offset = static_cast<uint32_t>(sizeof(float) * 2);
 
+        // location 2: vec2 instance offset
+        attrs[2].location = 2;
+        attrs[2].binding = 1;
+        attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
+        attrs[2].offset = 0;
+
+        // location 3: vec3 instance color
+        attrs[3].location = 3;
+        attrs[3].binding = 1;
+        attrs[3].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[3].offset = static_cast<uint32_t>(sizeof(float) * 2);
+
         VkPipelineVertexInputStateCreateInfo vi{};
         vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vi.vertexBindingDescriptionCount = 1;
-        vi.pVertexBindingDescriptions = &bindingDesc;
-        vi.vertexAttributeDescriptionCount = 2;
+        vi.vertexBindingDescriptionCount = 2;
+        vi.pVertexBindingDescriptions = bindingDescs;
+        vi.vertexAttributeDescriptionCount = 4;
         vi.pVertexAttributeDescriptions = attrs;
         pci.vertexInput = vi;
         pci.vertexInputProvided = true;

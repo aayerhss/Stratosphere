@@ -49,6 +49,52 @@ add_library(Engine STATIC
     src/MeshAssets.cpp
 )
 
+# --- Shaders: compile GLSL -> SPIR-V (optional but recommended) ---
+find_program(GLSLC_EXECUTABLE glslc)
+find_program(GLSLANG_VALIDATOR_EXECUTABLE glslangValidator)
+
+set(ENGINE_SHADER_DIR ${CMAKE_SOURCE_DIR}/Engine/shaders)
+set(ENGINE_SHADER_SOURCES
+    ${ENGINE_SHADER_DIR}/triangle.vert
+    ${ENGINE_SHADER_DIR}/triangle.frag
+    ${ENGINE_SHADER_DIR}/mesh.vert
+    ${ENGINE_SHADER_DIR}/mesh.frag
+)
+
+set(ENGINE_SHADER_SPV)
+foreach(SHADER ${ENGINE_SHADER_SOURCES})
+    get_filename_component(SHADER_NAME ${SHADER} NAME)
+    set(OUT_SPV ${ENGINE_SHADER_DIR}/${SHADER_NAME}.spv)
+    list(APPEND ENGINE_SHADER_SPV ${OUT_SPV})
+
+    if (GLSLC_EXECUTABLE)
+        add_custom_command(
+            OUTPUT ${OUT_SPV}
+            COMMAND ${GLSLC_EXECUTABLE} -o ${OUT_SPV} ${SHADER}
+            DEPENDS ${SHADER}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Compiling shader ${SHADER_NAME} -> ${SHADER_NAME}.spv"
+            VERBATIM
+        )
+    elseif (GLSLANG_VALIDATOR_EXECUTABLE)
+        add_custom_command(
+            OUTPUT ${OUT_SPV}
+            COMMAND ${GLSLANG_VALIDATOR_EXECUTABLE} -V -o ${OUT_SPV} ${SHADER}
+            DEPENDS ${SHADER}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Compiling shader ${SHADER_NAME} -> ${SHADER_NAME}.spv"
+            VERBATIM
+        )
+    endif()
+endforeach()
+
+if (GLSLC_EXECUTABLE OR GLSLANG_VALIDATOR_EXECUTABLE)
+    add_custom_target(EngineShaders ALL DEPENDS ${ENGINE_SHADER_SPV})
+    add_dependencies(Engine EngineShaders)
+else()
+    message(WARNING "No shader compiler found (glslc or glslangValidator). Using prebuilt *.spv files in Engine/shaders.")
+endif()
+
 target_include_directories(Engine
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
