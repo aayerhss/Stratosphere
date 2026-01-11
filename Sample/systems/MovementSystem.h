@@ -13,6 +13,8 @@
 
 #include "ECS/SystemFormat.h" // IGameplaySystem, SystemBase
 #include "ECS/Components.h"
+#include <cmath>
+#include <iostream>
 class MovementSystem : public Engine::ECS::SystemBase
 {
 public:
@@ -53,14 +55,29 @@ public:
             auto &velocities = const_cast<std::vector<Engine::ECS::Velocity> &>(store.velocities());
             const auto &masks = store.rowMasks();
 
+            const bool canLogTarget = store.hasMoveTarget();
+            const auto *targetsPtr = canLogTarget ? &store.moveTargets() : nullptr;
+
             for (uint32_t i = 0; i < n; ++i)
             {
                 if (!masks[i].matches(required(), excluded()))
                     continue;
 
+                const auto before = positions[i];
+
                 positions[i].x += velocities[i].x * dt;
                 positions[i].y += velocities[i].y * dt;
                 positions[i].z += velocities[i].z * dt;
+
+                const bool targetActive = (targetsPtr && (*targetsPtr)[i].active != 0);
+                const bool moving = (std::fabs(velocities[i].x) + std::fabs(velocities[i].y) + std::fabs(velocities[i].z)) > 1e-6f;
+                if (targetActive || moving)
+                {
+                    const auto after = positions[i];
+                    const float dx = after.x - before.x;
+                    const float dy = after.y - before.y;
+                    const float dz = after.z - before.z;
+                }
             }
         }
     }
