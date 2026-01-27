@@ -15,6 +15,7 @@ namespace Sample
         m_spatial.buildMasks(registry);
         m_avoidance.buildMasks(registry);
         m_movement.buildMasks(registry);
+        m_characterAnim.buildMasks(registry);
         m_renderModel.buildMasks(registry);
 
         // Neighbor radius (meters). Tune later; matches SpatialIndexSystem doc.
@@ -37,11 +38,13 @@ namespace Sample
         m_spatial.update(ecs.stores, dtSeconds);
         m_avoidance.update(ecs.stores, dtSeconds);
         m_movement.update(ecs.stores, dtSeconds);
+        m_characterAnim.update(ecs.stores, dtSeconds);
         m_renderModel.update(ecs.stores, dtSeconds);
     }
 
     void SystemRunner::SetAssetManager(Engine::AssetManager *assets)
     {
+        m_characterAnim.setAssetManager(assets);
         m_renderModel.setAssetManager(assets);
     }
 

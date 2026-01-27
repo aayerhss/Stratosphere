@@ -7,6 +7,7 @@
 #include "systems/SpatialIndexSystem.h"
 #include "systems/LocalAvoidanceSystem.h"
 #include "systems/MovementSystem.h"
+#include "systems/CharacterAnimationSystem.h"
 #include "systems/RenderSystem.h"
 
 namespace Engine
@@ -38,6 +39,8 @@ namespace Sample
         SpatialIndexSystem m_spatial{2.0f};
         LocalAvoidanceSystem m_avoidance{&m_spatial};
         MovementSystem m_movement;
+
+        CharacterAnimationSystem m_characterAnim;
 
         RenderSystem m_renderModel;
     };

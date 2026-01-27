@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -23,7 +24,7 @@ public:
         : m_assets(assets)
     {
         // We need Position to build a model matrix later.
-        setRequiredNames({"RenderModel", "Position"});
+        setRequiredNames({"RenderModel", "RenderAnimation", "Position"});
         setExcludedNames({"Disabled", "Dead"});
     }
 
@@ -33,7 +34,7 @@ public:
     void setRenderer(Engine::Renderer *renderer) { m_renderer = renderer; }
     void setCamera(Engine::Camera *camera) { m_camera = camera; }
 
-    void update(Engine::ECS::ArchetypeStoreManager &mgr, float /*dt*/) override
+    void update(Engine::ECS::ArchetypeStoreManager &mgr, float dt) override
     {
         if (!m_assets || !m_renderer || !m_camera)
             return;
@@ -43,7 +44,20 @@ public:
             return (static_cast<uint64_t>(h.generation) << 32) | static_cast<uint64_t>(h.id);
         };
 
-        std::unordered_map<uint64_t, std::vector<glm::mat4>> instancesByModel;
+        struct PerModelBatch
+        {
+            std::vector<glm::mat4> instanceWorlds;
+            std::vector<glm::mat4> nodePalette; // flattened: [instance][node]
+            uint32_t nodeCount = 0;
+
+            // scratch (reused per instance)
+            std::vector<Engine::ModelAsset::NodeTRS> trsScratch;
+            std::vector<glm::mat4> localsScratch;
+            std::vector<glm::mat4> globalsScratch;
+            std::vector<uint8_t> visitedScratch;
+        };
+
+        std::unordered_map<uint64_t, PerModelBatch> batchesByModel;
         std::unordered_map<uint64_t, Engine::ModelHandle> handleByKey;
 
         for (const auto &ptr : mgr.stores())
@@ -58,11 +72,14 @@ public:
                 continue;
             if (!store.hasRenderModel())
                 continue;
+            if (!store.hasRenderAnimation())
+                continue;
             if (!store.hasPosition())
                 continue;
 
-            auto &renderModels = const_cast<std::vector<Engine::ECS::RenderModel> &>(store.renderModels());
-            auto &positions = const_cast<std::vector<Engine::ECS::Position> &>(store.positions());
+            auto &renderModels = store.renderModels();
+            auto &renderAnimations = store.renderAnimations();
+            auto &positions = store.positions();
             const auto &masks = store.rowMasks();
             const uint32_t n = store.size();
 
@@ -76,23 +93,52 @@ public:
                 if (!asset)
                     continue;
 
+                const uint64_t key = keyFromHandle(handle);
+                const auto &anim = renderAnimations[row];
+
                 const auto &pos = positions[row];
 
-                const uint64_t key = keyFromHandle(handle);
                 handleByKey[key] = handle;
 
-                auto &vec = instancesByModel[key];
-                vec.emplace_back(glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, pos.y, pos.z)));
+                auto &batch = batchesByModel[key];
+                if (batch.nodeCount == 0)
+                {
+                    batch.nodeCount = static_cast<uint32_t>(asset->nodes.size());
+                    batch.nodePalette.reserve(64u * batch.nodeCount);
+                }
+
+                if (batch.nodeCount == 0)
+                    continue;
+
+                // World matrix
+                batch.instanceWorlds.emplace_back(glm::translate(glm::mat4(1.0f), glm::vec3(pos.x, pos.y, pos.z)));
+
+                const uint32_t safeClip = (!asset->animClips.empty())
+                                              ? std::min(anim.clipIndex, static_cast<uint32_t>(asset->animClips.size() - 1))
+                                              : 0u;
+                const float timeSec = (!asset->animClips.empty() && anim.playing) ? anim.timeSec : 0.0f;
+
+                // Node palette for this instance
+                asset->evaluatePoseInto(safeClip, timeSec,
+                                        batch.trsScratch,
+                                        batch.localsScratch,
+                                        batch.globalsScratch,
+                                        batch.visitedScratch);
+                if (batch.globalsScratch.size() == batch.nodeCount)
+                {
+                    batch.nodePalette.insert(batch.nodePalette.end(), batch.globalsScratch.begin(), batch.globalsScratch.end());
+                }
 
                 (void)asset;
             }
         }
 
         // Create/update passes for models that have instances this frame.
-        for (auto &kv : instancesByModel)
+        for (auto &kv : batchesByModel)
         {
             const uint64_t key = kv.first;
-            auto &worlds = kv.second;
+            auto &batch = kv.second;
+            auto &worlds = batch.instanceWorlds;
             if (worlds.empty())
                 continue;
 
@@ -113,12 +159,13 @@ public:
             it->second->setCamera(m_camera);
             it->second->setEnabled(true);
             it->second->setInstances(worlds.data(), static_cast<uint32_t>(worlds.size()));
+            it->second->setNodePalette(batch.nodePalette.data(), static_cast<uint32_t>(worlds.size()), batch.nodeCount);
         }
 
         // Disable passes that have no instances this frame.
         for (auto &kv : m_passes)
         {
-            if (instancesByModel.find(kv.first) == instancesByModel.end())
+            if (batchesByModel.find(kv.first) == batchesByModel.end())
             {
                 kv.second->setEnabled(false);
             }
