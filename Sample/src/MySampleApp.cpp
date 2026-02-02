@@ -2,6 +2,8 @@
 
 #include "Engine/VulkanContext.h"
 #include "Engine/Window.h"
+#include "Engine/ImGuiLayer.h" 
+#include <vulkan/vulkan.h>
 
 #include "ECS/Prefab.h"
 #include "ECS/PrefabSpawner.h"
@@ -12,6 +14,9 @@
 
 #include "Engine/GroundPlaneRenderPassModule.h"
 
+#include <nlohmann/json.hpp>
+#include <fstream>
+
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -21,6 +26,11 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "MenuManager.h"
+#include <GLFW/glfw3.h>
+
+using json = nlohmann::json;
+
 MySampleApp::MySampleApp() : Engine::Application()
 {
     m_assets = std::make_unique<Engine::AssetManager>(
@@ -29,6 +39,44 @@ MySampleApp::MySampleApp() : Engine::Application()
         GetVulkanContext().GetGraphicsQueue(),
         GetVulkanContext().GetGraphicsQueueFamilyIndex());
 
+
+        m_menu.SetTextureLoader([this](const std::string& relpath) -> ImTextureID {
+            if (!m_assets)
+                return nullptr;
+
+            // Load into an Engine texture asset
+            Engine::TextureHandle th = m_assets->loadTextureFromFile(relpath);
+            if (!th.isValid())
+                return nullptr;
+
+            Engine::TextureAsset* ta = m_assets->getTexture(th);
+            if (!ta)
+                return nullptr;
+
+            VkSampler sampler = ta->getSampler();
+            VkImageView view = ta->getView();
+            if (sampler == VK_NULL_HANDLE || view == VK_NULL_HANDLE)
+                return nullptr;
+
+            // Register with ImGui (uses ImGui_ImplVulkan_AddTexture internally)
+            Engine::ImGuiLayer* layer = GetImGuiLayer();
+            if (!layer)
+                return nullptr;
+
+            return layer->addTexture(sampler, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        });
+    // Optionally let the MenuManager know whether a save exists (so it can enable "Continue")
+    m_menu.SetHasSaveFile(HasSaveFile());
+
+    auto loader = m_menu.GetTextureLoader();
+    if (loader)
+    {
+         // Use same relative path convention as MenuManager (example uses "assets/raw/...")
+        ImTextureID bg   = loader("assets/raw/menu.png");
+        ImTextureID tnew = loader("assets/raw/newgame.png");
+        ImTextureID tcont= loader("assets/raw/continuegame.png");
+        ImTextureID texit= loader("assets/raw/exit.png");
+    }
     // RTS camera initialization (classic defaults).
     m_rtsCam.focus = {0.0f, 0.0f, 0.0f};
     m_rtsCam.yawDeg = -45.0f;
@@ -98,6 +146,13 @@ MySampleApp::MySampleApp() : Engine::Application()
     m_systems.Initialize(GetECS().components);
 
     // Hook engine window events into our handler.
+    SetEventCallback([this](const std::string &e)
+                     { this->OnEvent(e); });
+
+        // Detect whether a save exists so MenuManager can show Continue
+    m_menu.SetHasSaveFile(HasSaveFile());
+
+    // Hook up event callback (already present in file previously)
     SetEventCallback([this](const std::string &e)
                      { this->OnEvent(e); });
 }
@@ -326,6 +381,37 @@ void MySampleApp::ApplyRTSCamera(float aspect)
 void MySampleApp::OnRender()
 {
     // Rendering handled by Renderer/Engine.
+     // If ImGui frame active, draw the menu. (Application's Run begins an ImGui frame before OnRender.)
+    m_menu.OnImGuiFrame();
+
+    // If menu produced a result, handle it
+    if (m_menu.GetResult() != MenuManager::Result::None)
+    {
+        auto res = m_menu.GetResult();
+        m_menu.ClearResult();
+
+        if (res == MenuManager::Result::NewGame)
+        {
+            // Start a fresh game: clear any previous save
+            std::remove(m_saveFilePath.c_str());
+            m_menu.SetHasSaveFile(false);
+
+            // Hide menu with fade and continue normal loop
+            m_menu.Hide();
+            // optionally reset game state (camera etc)
+            // Example: reset camera defaults done in constructor already
+        }
+        else if (res == MenuManager::Result::ContinueGame)
+        {
+            // Load saved state (if present) and hide menu
+            LoadGameState();
+            m_menu.Hide();
+        }
+        else if (res == MenuManager::Result::Exit)
+        {
+            Close(); // Application::Close will stop the loop and cleanup
+        }
+    }
 }
 
 void MySampleApp::setupECSFromPrefabs()
@@ -421,3 +507,79 @@ void MySampleApp::OnEvent(const std::string &name)
         return;
     }
 }
+
+void MySampleApp::SaveGameState()
+{
+    json j;
+    j["rts_focus_x"] = m_rtsCam.focus.x;
+    j["rts_focus_y"] = m_rtsCam.focus.y;
+    j["rts_focus_z"] = m_rtsCam.focus.z;
+    j["yawDeg"] = m_rtsCam.yawDeg;
+    j["pitchDeg"] = m_rtsCam.pitchDeg;
+    j["height"] = m_rtsCam.height;
+
+    // Save window size using Engine::Window interface (available)
+    j["win_w"] = static_cast<int>(GetWindow().GetWidth());
+    j["win_h"] = static_cast<int>(GetWindow().GetHeight());
+
+    // Save GLFW window position if available
+    GLFWwindow* wnd = static_cast<GLFWwindow*>(GetWindow().GetWindowPointer());
+    if (wnd)
+    {
+        int wx = 0, wy = 0;
+        glfwGetWindowPos(wnd, &wx, &wy);
+        j["win_x"] = wx;
+        j["win_y"] = wy;
+    }
+
+    std::ofstream o(m_saveFilePath);
+    if (o.good())
+        o << j.dump(4);
+}
+
+void MySampleApp::LoadGameState()
+{
+    std::ifstream i(m_saveFilePath);
+    if (!i.good()) return;
+    json j;
+    i >> j;
+
+    m_rtsCam.focus.x = j.value("rts_focus_x", m_rtsCam.focus.x);
+    m_rtsCam.focus.y = j.value("rts_focus_y", m_rtsCam.focus.y);
+    m_rtsCam.focus.z = j.value("rts_focus_z", m_rtsCam.focus.z);
+    m_rtsCam.yawDeg = j.value("yawDeg", m_rtsCam.yawDeg);
+    m_rtsCam.pitchDeg = j.value("pitchDeg", m_rtsCam.pitchDeg);
+    m_rtsCam.height = j.value("height", m_rtsCam.height);
+
+    // Re-apply camera projection with current window aspect
+    auto &win = GetWindow();
+    const float aspect = static_cast<float>(win.GetWidth()) / static_cast<float>(win.GetHeight());
+    ApplyRTSCamera(aspect);
+
+    // Note: we intentionally do NOT call GLFW-specific functions to set window position/size here,
+    // because the Engine::Window interface in this repo does not provide setters for position,
+    // and directly depending on GLFW types in Sample sources caused the previous undefined-identifier issues.
+
+    // Restore window position if saved (use GLFW directly via the window pointer)
+    GLFWwindow* wnd = static_cast<GLFWwindow*>(GetWindow().GetWindowPointer());
+    if (wnd)
+    {
+        int winx = j.value("win_x", INT32_MIN);
+        int winy = j.value("win_y", INT32_MIN);
+        if (winx != INT32_MIN && winy != INT32_MIN)
+        {
+            glfwSetWindowPos(wnd, winx, winy);
+        }
+    }
+}
+
+
+bool MySampleApp::HasSaveFile() const
+{
+    std::ifstream f(m_saveFilePath);
+    return f.good();
+}
+
+
+
+// Expose the texture loader so callers can query it.
